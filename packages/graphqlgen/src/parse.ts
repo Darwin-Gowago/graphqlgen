@@ -2,18 +2,19 @@ import * as Ajv from 'ajv'
 import * as chalk from 'chalk'
 import * as fs from 'fs'
 import * as yaml from 'js-yaml'
-
-import { GraphQLGenDefinition, Language } from 'graphqlgen-json-schema'
-import schema = require('graphqlgen-json-schema/dist/schema.json')
-
-import { ContextDefinition, ModelMap } from './types'
-import { getAbsoluteFilePath, getImportPathRelativeToOutput } from './path-helpers'
 import { DocumentNode, parse } from 'graphql'
 import { importSchema } from 'graphql-import'
 
-export interface ModelsConfig {
-  [typeName: string]: string
-}
+import { GraphQLGenDefinition, Language, Models } from 'graphqlgen-json-schema'
+import schema = require('graphqlgen-json-schema/dist/schema.json')
+
+import { ContextDefinition, ModelMap } from './types'
+import {
+  getAbsoluteFilePath,
+  getImportPathRelativeToOutput,
+} from './path-helpers'
+import { getInterfaceNamesToPath } from './ast'
+import { extractGraphQLTypes } from './source-helper'
 
 const ajv = new Ajv().addMetaSchema(
   require('ajv/lib/refs/json-schema-draft-06.json'),
@@ -96,26 +97,60 @@ export function parseSchema(schemaPath: string): DocumentNode {
   return parsedSchema!
 }
 
+function buildModel(
+  filePath: string,
+  modelName: string,
+  outputDir: string,
+  language: Language,
+) {
+  const absoluteFilePath = getAbsoluteFilePath(filePath, language)
+  const importPathRelativeToOutput = getImportPathRelativeToOutput(
+    absoluteFilePath,
+    outputDir,
+  )
+  return {
+    absoluteFilePath,
+    importPathRelativeToOutput,
+    modelTypeName: modelName,
+  }
+}
+
 export function parseModels(
-  modelsConfig: ModelsConfig,
+  models: Models,
+  schema: DocumentNode,
   outputDir: string,
   language: Language,
 ): ModelMap {
-  return Object.keys(modelsConfig).reduce((acc, typeName) => {
-    const modelConfig = modelsConfig[typeName]
-    const [filePath, modelName] = modelConfig.split(':')
-    const absoluteFilePath = getAbsoluteFilePath(filePath, language)
-    const importPathRelativeToOutput = getImportPathRelativeToOutput(
-      absoluteFilePath,
-      outputDir,
+  const graphQLTypes = extractGraphQLTypes(schema)
+    .filter(type => !type.type.isInput)
+    .filter(
+      type => ['Query', 'Mutation', 'Subscription'].indexOf(type.name) === -1,
     )
+
+  const interfaceNamesToPath = !!models.files
+    ? getInterfaceNamesToPath(models.files)
+    : {}
+
+  return graphQLTypes.reduce((acc, type) => {
+    const isModelOveridden = models.override && models.override[type.name]
+
+    if (isModelOveridden) {
+      const [filePath, modelName] = models.override![type.name].split(':')
+
+      return {
+        ...acc,
+        [type.name]: buildModel(filePath, modelName, outputDir, language),
+      }
+    }
+
     return {
       ...acc,
-      [typeName]: {
-        absoluteFilePath,
-        importPathRelativeToOutput,
-        modelTypeName: modelName,
-      },
+      [type.name]: buildModel(
+        interfaceNamesToPath[type.name],
+        type.name,
+        outputDir,
+        language,
+      ),
     }
   }, {})
 }

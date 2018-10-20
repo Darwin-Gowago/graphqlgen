@@ -17,12 +17,7 @@ import {
   getImportPathRelativeToOutput,
   getAbsoluteFilePath,
 } from './path-helpers'
-import {
-  IGenerator,
-  GenerateArgs,
-  CodeFileLike,
-  ModelMap,
-} from './types'
+import { IGenerator, GenerateArgs, CodeFileLike, ModelMap } from './types'
 import {
   generate as generateTS,
   format as formatTS,
@@ -224,7 +219,12 @@ async function run() {
   }
 
   //TODO: Should we provide a default in case `config.output.types` is not defined?
-  const modelMap = parseModels(config.models, config.output, config.language)
+  const modelMap = parseModels(
+    config.models,
+    parsedSchema,
+    config.output,
+    config.language,
+  )
 
   const { generatedTypes, generatedResolvers } = generateCode({
     schema: parsedSchema!,
